@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <gmpxx.h>
 
 struct wfm_header {
     uint16_t byte_order;
@@ -30,8 +31,11 @@ struct wfm_header {
 
 };
 
+
 void dump_header(const wfm_header&);
 int decode_header(wfm_header&, const char[838]);
 int read_wfm(std::vector< std::vector<short> >&, wfm_header&, const char *);
 int read_wfm_scaled(std::vector< std::vector<double> >&, wfm_header&, const char *);
+int read_wfm_scaled(std::vector< std::vector<mpf_class> >&, wfm_header&, const char *);
 
+int read_wfm_scaled_fast(std::vector<std::vector<double> >&, wfm_header&, const char*);

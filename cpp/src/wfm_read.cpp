@@ -150,8 +150,9 @@ int read_wfm(std::vector<std::vector<short> >& vec_waves, wfm_header& meta_heade
     
     // (Frames - 1) * (24 + 30) bytes
     std::shared_ptr<char> p(new char((24 + 30) * (meta_header.frames - 1)));
-    //p = (char *)malloc((24 + 30) * (meta_header.frames - 1));
     file.read(p.get(), (24 + 30) * (meta_header.frames - 1));
+    //p = (char *)malloc((24 + 30) * (meta_header.frames - 1));
+    //file.read(p, (24 + 30) * (meta_header.frames - 1));
 
     samples = meta_header.samples;
     available_samples = meta_header.available_values;
@@ -176,6 +177,27 @@ int read_wfm(std::vector<std::vector<short> >& vec_waves, wfm_header& meta_heade
     return 0;
 }
 
+
+int read_wfm_scaled_fast(std::vector<std::vector<double> >& vec_waves, 
+        wfm_header &meta_header, const char *full_wave_buf) {
+    // assumes that header (838 bytes) has been read and decoded.
+    short val;
+    size_t frame_offset;
+
+    frame_offset = 0;
+    for (size_t frame = 0; frame < meta_header.frames; frame++) {
+        //frame_offset = frame * meta_header.available_values;
+        for (size_t i = 0; i < meta_header.samples; i++ ) {
+            val = *((short *)full_wave_buf + i + frame_offset + meta_header.pre_values),
+            vec_waves[frame][i] = double(val) * meta_header.vscale + meta_header.voffset;
+        }
+        frame_offset += meta_header.available_values;
+    }
+
+    return 0;
+}
+
+
 int read_wfm_scaled(std::vector<std::vector<double> >& vec_waves, wfm_header& meta_header, const char *filepath) {
     //char *p, *full_wave;
     short val;
@@ -196,13 +218,9 @@ int read_wfm_scaled(std::vector<std::vector<double> >& vec_waves, wfm_header& me
     }
  
     decode_header(meta_header, buffer);
-#ifdef DEBUG
-    puts("[*] Debug mode");
-    dump_header(meta_header); return 1;
-#endif
-    
+   
     // (Frames - 1) * (24 + 30) bytes
-    std::shared_ptr<char> p(new char[(24 + 30) * (meta_header.frames - 1)]);
+    std::unique_ptr<char> p(new char[(24 + 30) * (meta_header.frames - 1)]);
     file.read(p.get(), (24 + 30) * (meta_header.frames - 1));
 
     samples = meta_header.samples;
@@ -213,6 +231,12 @@ int read_wfm_scaled(std::vector<std::vector<double> >& vec_waves, wfm_header& me
     //char *full_wave = (char *)malloc(2 * available_samples * meta_header.frames);
     //file.read(full_wave, 2 * available_samples * meta_header.frames);
     file.read(check_sum, 8);
+
+#ifdef DEBUG
+    puts("[*] Debug mode");
+    dump_header(meta_header); return 1;
+#endif
+     
     file.close();
 
     vec_waves.resize(meta_header.frames);
@@ -224,6 +248,61 @@ int read_wfm_scaled(std::vector<std::vector<double> >& vec_waves, wfm_header& me
             //val = *((short *)full_wave + i + frame_offset + meta_header.pre_values),
             val = *((short *)full_wave.get() + i + frame_offset + meta_header.pre_values),
             vec_waves[frame][i] = double(val) * meta_header.vscale + meta_header.voffset;
+        }
+    }
+
+    return 0;
+}
+
+int read_wfm_scaled(std::vector<std::vector<mpf_class> >& vec_waves, wfm_header& meta_header, const char *filepath) {
+    //char *p, *full_wave;
+    short val;
+    char check_sum[8];
+    size_t samples, available_samples;
+    char buffer[838]; // Meta header
+
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "The given file could not be read." << std::endl;
+        return 1;
+    }
+
+    file.read(buffer, 838); // read header
+    if ( file.gcount() != 838) {
+        std::cerr << "Reading a header failed." << std::endl;
+        return 1;
+    }
+ 
+    decode_header(meta_header, buffer);
+   
+    // (Frames - 1) * (24 + 30) bytes
+    std::unique_ptr<char> p(new char[(24 + 30) * (meta_header.frames - 1)]);
+    file.read(p.get(), (24 + 30) * (meta_header.frames - 1));
+
+    samples = meta_header.samples;
+    available_samples = meta_header.available_values;
+
+    std::unique_ptr<char> full_wave(new char[2 * available_samples * meta_header.frames]);
+    file.read(full_wave.get(), 2 * available_samples * meta_header.frames);
+    file.read(check_sum, 8);
+    file.close();
+#ifdef DEBUG
+    puts("[*] Debug mode");
+    dump_header(meta_header); return 1;
+#endif
+
+    size_t frame_offset;
+    vec_waves.resize(meta_header.frames);
+    for (size_t frame = 0; frame < meta_header.frames; frame++) {
+        vec_waves[frame].resize(samples);
+        frame_offset = frame * meta_header.available_values;
+
+        for (size_t i = 0; i < samples; i++ ) {
+            //val = *((short *)full_wave + i + frame_offset + meta_header.pre_values),
+            val = *((short *)full_wave.get() + i + frame_offset + meta_header.pre_values),
+            //vec_waves[frame][i] = double(val) * meta_header.vscale + meta_header.voffset;
+            mpf_set_d(vec_waves[frame][i].get_mpf_t(),
+                    double(val) * meta_header.vscale + meta_header.voffset);
         }
     }
 
